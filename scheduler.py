@@ -1,11 +1,11 @@
+import settings
 from discord.ext import commands, tasks
 import json
 import requests
 from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
-API_KEY = '6E24BEDA-24A0486E-8E0EAB87-314DEEFE'
-HEADERS = {'token': API_KEY}
+HEADERS = {'token': settings.ESP_API_SECRET}
 URLS = {
     'area': 'https://developer.sepush.co.za/business/2.0/area?id={area}',
     'eskom_status': 'https://loadshedding.eskom.co.za/LoadShedding/GetStatus'
