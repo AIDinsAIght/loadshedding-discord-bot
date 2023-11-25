@@ -6,21 +6,10 @@ import json
 import pickle
 from datetime import datetime
 
-HEADERS = {'token': settings.ESP_API_SECRET}
-FILE_PATH = 'subscriptions.pkl'
-
-URLS = {
-    'api_allowance': 'https://developer.sepush.co.za/business/2.0/api_allowance',
-    'area': 'https://developer.sepush.co.za/business/2.0/area?id={area}',
-    'areas_search': 'https://developer.sepush.co.za/business/2.0/areas_search?text={text}',
-    'status': 'https://developer.sepush.co.za/business/2.0/status',
-    'test_area': 'https://developer.sepush.co.za/business/2.0/area?id={area}&test={test}'
-}
-
 bot = commands.Bot(command_prefix="!", intents=discord.Intents.all())
-channel = bot.get_channel(settings.DISCORD_CHANNEL_SECRET)
+channel = None
+scheduler_cog = None
 emoji_high_voltage = '\U000026A1';
-
 areas_info = {}
 current_subscriptions = {}
 last_search_results = {}
@@ -28,7 +17,6 @@ last_search_results = {}
 # METHODS #
 
 async def add_subscription(subscription):
-    scheduler_cog = bot.get_cog('Scheduler')
     await scheduler_cog.update_current_subscriptions(subscription)
 
 async def check_loadshedding(stage):
@@ -50,22 +38,20 @@ async def check_loadshedding(stage):
 async def load_subscriptions():
     global current_subscriptions, areas_info
     try:
-        with open(FILE_PATH, 'rb') as stored_subscriptions:
+        with open(settings.FILE_PATH, 'rb') as stored_subscriptions:
             current_subscriptions = pickle.load(stored_subscriptions)            
             print(f'Pickle file already exists. Loaded data: {current_subscriptions}')
     except FileNotFoundError:
         print(f'Pickle file does not exist.\nSubscribing to an area will create a new file and store the subscription.')
     else:
-        scheduler_cog = bot.get_cog('Scheduler')
         scheduler_cog.set_current_subscriptions(current_subscriptions)
         areas_info = await scheduler_cog.get_areas_info()
 
 async def remove_subscription(subscription):
-    scheduler_cog = bot.get_cog('Scheduler')
     await scheduler_cog.update_current_subscriptions(subscription, delete=True)
 
 def save_subscriptions():
-    with open(FILE_PATH, 'wb') as stored_subscriptions:
+    with open(settings.FILE_PATH, 'wb') as stored_subscriptions:
         pickle.dump(current_subscriptions, stored_subscriptions)
 
 async def send_alert(sub):
@@ -75,7 +61,7 @@ async def send_alert(sub):
 
 async def get_area(area_id):
     try:
-        response = requests.get(URLS['area'].format(area=area_id), headers=HEADERS).json()
+        response = requests.get(settings.URLS['area'].format(area=area_id), headers=settings.HEADERS).json()
     except requests.exceptions.HTTPError as e:
         message = json.loads(e.response.text).get('error', 'No error message found')
         await print(f"HTTP error: {e.response.status_code}\n{message}")
@@ -88,7 +74,7 @@ async def get_area(area_id):
 
 async def get_quota():
     try:
-        response = requests.get(URLS['api_allowance'], headers=HEADERS).json()     
+        response = requests.get(settings.URLS['api_allowance'], headers=settings.HEADERS).json()     
     except requests.exceptions.HTTPError as e:
         message = json.loads(e.response.text).get('error', 'No error message found')
         await print(f"HTTP error: {e.response.status_code}\n{message}")
@@ -101,7 +87,7 @@ async def get_quota():
 
 async def get_search(search_query):
     try:
-        response = requests.get(URLS['areas_search'].format(text=search_query), headers=HEADERS).json()
+        response = requests.get(settings.URLS['areas_search'].format(text=search_query), headers=settings.HEADERS).json()
     except requests.exceptions.HTTPError as e:
         message = json.loads(e.response.text).get('error', 'No error message found')
         await print(f"HTTP error: {e.response.status_code}\n{message}")
@@ -116,11 +102,14 @@ async def get_search(search_query):
 
 @bot.event
 async def on_ready():
+    global channel, scheduler_cog
+    channel = bot.get_channel(settings.DISCORD_CHANNEL_SECRET)
+
     await bot.load_extension("scheduler")
     scheduler_cog = bot.get_cog('Scheduler')
 
     await load_subscriptions()
-    scheduler_cog.start_get_eskom_status()
+    scheduler_cog.start_loop_get_eskom_status()
     scheduler_cog.start_loop_get_areas_info()
 
 @bot.event
@@ -135,7 +124,6 @@ async def on_load_areas(data):
 
 @bot.event
 async def on_stage_check(stage):
-    print(f"Event received - eskom stage: {stage}")
     await check_loadshedding(stage-1)
 
 @bot.event
@@ -152,8 +140,10 @@ async def add(ctx, area_number):
     user = {'id': ctx.author.id, 'name': ctx.author.name, 'mention': ctx.author.mention}
     area = last_search_results[selected_area]
     subscription = {'user' : user, 'area': area}
-    await ctx.send(f"{subscription['user']['mention']} adding new subscription...")
     await add_subscription(subscription)
+    await ctx.send(f"{subscription['user']['mention']}\nNew subscription added for: {area['name']}")
+    stage = await scheduler_cog.get_eskom_status()
+    await check_loadshedding(stage-1)
 
 @bot.command()
 async def area(ctx, area_id):
@@ -213,6 +203,7 @@ async def view(ctx):
         if selected_subscription in indexed_subscriptions:
             subscription = indexed_subscriptions[selected_subscription][1]
             await remove_subscription(subscription)
+            await ctx.send(f"{subscription['user']['mention']}\nRemoved subscription for: {subscription['area']['name']}")
 
 # ERRORS #
 
