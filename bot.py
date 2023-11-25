@@ -24,6 +24,9 @@ async def check_loadshedding(stage):
     today = now.strftime('%A')
     for sub in current_subscriptions:
         area_id = current_subscriptions[sub]['area']['id']
+        if 'error' in areas_info[area_id]:
+            await channel.send(f"The latest schedules could not be fetched due to reaching your quota limit.\nYou can check your current quota usage using the '!quota' command.")
+            return
         days = areas_info[area_id]['schedule']['days']
         for day in days:
             if len(day['stages']) <= 4 and stage >= 4:
