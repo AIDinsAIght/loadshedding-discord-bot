@@ -1,6 +1,7 @@
 import os
 from dotenv import load_dotenv
 from zoneinfo import ZoneInfo
+import discord
 
 load_dotenv()
 
@@ -8,6 +9,7 @@ load_dotenv()
 DISCORD_API_SECRET = os.getenv("DISCORD_API_TOKEN")
 DISCORD_CHANNEL_SECRET = int(os.getenv("DISCORD_CHANNEL_ID"))
 ESP_API_SECRET = os.getenv("ESP_API_TOKEN")
+GUILDS_ID_SECRET = discord.Object(id=int(os.getenv("GUILDS_ID")))
 
 # ESP API HEADERS #
 HEADERS = {'token': ESP_API_SECRET}

@@ -107,6 +107,9 @@ async def get_search(search_query):
 async def on_ready():
     global channel, scheduler_cog
     channel = bot.get_channel(settings.DISCORD_CHANNEL_SECRET)
+    
+    bot.tree.copy_global_to(guild=settings.GUILDS_ID_SECRET)
+    await bot.tree.sync(guild=settings.GUILDS_ID_SECRET)
 
     await bot.load_extension("scheduler")
     scheduler_cog = bot.get_cog('Scheduler')
@@ -137,66 +140,66 @@ async def on_update_current_subscriptions(updated_subscriptions):
 
 # COMMANDS #
 
-@bot.command()
-async def add(ctx, area_number):
+@bot.tree.command(description="Add a new subscription", name="add")
+async def add(interaction: discord.Interaction, area_number: str):
     selected_area = int(area_number)
-    user = {'id': ctx.author.id, 'name': ctx.author.name, 'mention': ctx.author.mention}
+    user = {'id': interaction.user.id, 'name': interaction.user.name, 'mention': interaction.user.mention}
     area = last_search_results[selected_area]
     subscription = {'user' : user, 'area': area}
     await add_subscription(subscription)
-    await ctx.send(f"{subscription['user']['mention']}\nNew subscription added for: {area['name']}")
+    await interaction.response.send_message(f"{subscription['user']['mention']}\nNew subscription added for: {area['name']}")
     stage = await scheduler_cog.get_eskom_status()
     await check_loadshedding(stage-1)
 
-@bot.command()
-async def area(ctx, area_id):
+@bot.tree.command(description="Get area info using an area ID", name="area")
+async def area(interaction: discord.Interaction, area_id: str):
     data = await get_area(area_id)
 
     info, events = data['info'], data['events']
     next_event = events[0] if events else None
 
-    await ctx.send(f"Area: {info['name']}\nStatus: {next_event['note']}\nStart: {next_event['start']}")
+    await interaction.response.send_message(f"Area: {info['name']}\nStatus: {next_event['note']}\nStart: {next_event['start']}")
 
-@bot.command()
-async def quota(ctx):
+@bot.tree.command(description="View daily API usage", name="quota")
+async def quota(interaction: discord.Interaction):
     data = await get_quota()
 
     allowance = data['allowance']
 
-    await ctx.send(f"Today's quota usage is: {allowance['count']} / {allowance['limit']}")
+    await interaction.response.send_message(f"Today's quota usage is: {allowance['count']} / {allowance['limit']}")
 
-@bot.command()
-async def search(ctx, *search_text):
+@bot.tree.command(description="Search areas by keywords", name="search")
+async def search(interaction: discord.Interaction, search_text: str):
     global last_search_results
 
-    search_query = '+'.join(search_text)
+    search_query = '+'.join(search_text.split(" "))
     data = await get_search(search_query)
 
     areas = data['areas']
     last_search_results = {index + 1: area for index, area in enumerate(areas)}
     output = '\n'.join([f"{index}. {area['name']} - {area['region']}" for index, area in last_search_results.items()])
 
-    await ctx.send(f"Areas found:\n{output}")
-    await ctx.send("To subscribe to alerts for an area, use the '!add' command followed by the area number.\nFor example, '!add 1'")
+    await interaction.response.send_message(f"Areas found:\n{output}")
+    await interaction.followup.send("To subscribe to alerts for an area, use the '!add' command followed by the area number.\nFor example, '!add 1'")
 
-@bot.command()
-async def search_results(ctx):
+@bot.tree.command(description="View the results of the last search", name="search_results")
+async def search_results(interaction: discord.Interaction):
     if not last_search_results:
-        await ctx.send("No search results available.")
+        await interaction.response.send_message("No search results available.")
     else:
         output = '\n'.join([f"{index}. {area['name']} - {area['region']}" for index, area in last_search_results.items()])
-        await ctx.send(f"Last search results:\n{output}")
-        await ctx.send("To subscribe to alerts for an area, use the '!add' command followed by the area number.\nFor example, '!add 1'")
+        await interaction.response.send_message(f"Last search results:\n{output}")
+        await interaction.followup.send("To subscribe to alerts for an area, use the '!add' command followed by the area number.\nFor example, '!add 1'")
 
-@bot.command()
-async def view(ctx):
+@bot.tree.command(description="View all current subscriptions", name="view")
+async def view(interaction: discord.Interaction):
     if not current_subscriptions:
-        await ctx.send("No subscriptions available.")
+        await interaction.response.send_message("No subscriptions available.")
     else:
         indexed_subscriptions = {index + 1: (sub_id, sub) for index, (sub_id, sub) in enumerate(current_subscriptions.items())}
         output = '\n'.join([f"{index}. {sub['user']['name']} - {sub['area']['name']}\n\t{sub['area']['id']}" for index, (sub_id, sub) in indexed_subscriptions.items()])
-        await ctx.send(f"Current subscriptions:\n{output}")
-        await ctx.send("To remove a subscription, type 'remove' followed by the subscription number.\nFor example, 'remove 1'")
+        await interaction.response.send_message(f"Current subscriptions:\n{output}")
+        await interaction.followup.send("To remove a subscription, type 'remove' followed by the subscription number.\nFor example, 'remove 1'")
 
         def check_remove(m):
             return (m.content.startswith("remove") and int(m.content.split(' ')[1]) in indexed_subscriptions)
@@ -206,7 +209,7 @@ async def view(ctx):
         if selected_subscription in indexed_subscriptions:
             subscription = indexed_subscriptions[selected_subscription][1]
             await remove_subscription(subscription)
-            await ctx.send(f"{subscription['user']['mention']}\nRemoved subscription for: {subscription['area']['name']}")
+            await interaction.followup.send(f"{subscription['user']['mention']}\nRemoved subscription for: {subscription['area']['name']}")
 
 # ERRORS #
 
