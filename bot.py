@@ -6,7 +6,7 @@ import json
 import pickle
 from datetime import datetime
 
-bot = commands.Bot(command_prefix="!", intents=discord.Intents.all())
+bot = commands.Bot(command_prefix="/", intents=discord.Intents.all())
 channel = None
 scheduler_cog = None
 emoji_high_voltage = '\U000026A1';
@@ -180,7 +180,7 @@ async def search(interaction: discord.Interaction, search_text: str):
     output = '\n'.join([f"{index}. {area['name']} - {area['region']}" for index, area in last_search_results.items()])
 
     await interaction.response.send_message(f"Areas found:\n{output}")
-    await interaction.followup.send("To subscribe to alerts for an area, use the '!add' command followed by the area number.\nFor example, '!add 1'")
+    await interaction.followup.send("To subscribe to alerts for an area, use the '/add' command and provide the area number.\nFor example, '/add 1'")
 
 @bot.tree.command(description="View the results of the last search", name="search_results")
 async def search_results(interaction: discord.Interaction):
@@ -189,7 +189,7 @@ async def search_results(interaction: discord.Interaction):
     else:
         output = '\n'.join([f"{index}. {area['name']} - {area['region']}" for index, area in last_search_results.items()])
         await interaction.response.send_message(f"Last search results:\n{output}")
-        await interaction.followup.send("To subscribe to alerts for an area, use the '!add' command followed by the area number.\nFor example, '!add 1'")
+        await interaction.followup.send("To subscribe to alerts for an area, use the '/add' command and provide the area number.\nFor example, '/add 1'")
 
 @bot.tree.command(description="View all current subscriptions", name="view")
 async def view(interaction: discord.Interaction):
