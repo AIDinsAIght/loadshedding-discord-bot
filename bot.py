@@ -6,6 +6,8 @@ import json
 import pickle
 from datetime import datetime
 
+logger = settings.logging.getLogger("bot")
+
 bot = commands.Bot(command_prefix="/", intents=discord.Intents.all())
 channel = None
 scheduler_cog = None
@@ -20,16 +22,19 @@ async def add_subscription(subscription):
     await scheduler_cog.update_current_subscriptions(subscription)
 
 async def check_loadshedding(stage):
+    logger.debug(f"Execute check_loadshedding for stage: {stage}")
     now = datetime.now()
     today = now.strftime('%A')
     for sub in current_subscriptions:
         area_id = current_subscriptions[sub]['area']['id']
         if 'error' in areas_info[area_id]:
+            logger.error(f"Error fetching schedules for: {areas_info[area_id]}")
             await channel.send(f"The latest schedules could not be fetched due to reaching your quota limit.\nYou can check your current quota usage using the '!quota' command.")
             return
         days = areas_info[area_id]['schedule']['days']
         for day in days:
             if len(day['stages']) <= 4 and stage >= 4:
+                logger.debug(f"No schedules for stages 5-8 for {area_id}. Using stage 4 schedule.")
                 stage = 4
             if day['name'] == today:
                 times = day['stages'][stage]
@@ -40,20 +45,23 @@ async def check_loadshedding(stage):
 
 async def load_subscriptions():
     global current_subscriptions, areas_info
+    logger.debug("Loading subscriptions")
     try:
         with open(settings.FILE_PATH, 'rb') as stored_subscriptions:
             current_subscriptions = pickle.load(stored_subscriptions)            
-            print(f'Pickle file already exists. Loaded data: {current_subscriptions}')
+            logger.info(f'Pickle file already exists. Loaded data: {current_subscriptions}')
     except FileNotFoundError:
-        print(f'Pickle file does not exist.\nSubscribing to an area will create a new file and store the subscription.')
+        logger.warn(f'Pickle file does not exist. Subscribing to an area will create a new file and store the subscription.')
     else:
         scheduler_cog.set_current_subscriptions(current_subscriptions)
         areas_info = await scheduler_cog.get_areas_info()
+        logger.info("Finished loading subscriptions")
 
 async def remove_subscription(subscription):
     await scheduler_cog.update_current_subscriptions(subscription, delete=True)
 
 def save_subscriptions():
+    logger.info("Saving current subscriptions")
     with open(settings.FILE_PATH, 'wb') as stored_subscriptions:
         pickle.dump(current_subscriptions, stored_subscriptions)
 
@@ -67,11 +75,11 @@ async def get_area(area_id):
         response = requests.get(settings.URLS['area'].format(area=area_id), headers=settings.HEADERS).json()
     except requests.exceptions.HTTPError as e:
         message = json.loads(e.response.text).get('error', 'No error message found')
-        await print(f"HTTP error: {e.response.status_code}\n{message}")
+        logger.error(f"HTTP error: {e.response.status_code}\n{message}")
     except requests.exceptions.RequestException as e:
-        await print(f"Network error: {e.response.status_code}\n{e.response.text}")
+        logger.error(f"Network error: {e.response.status_code}\n{e.response.text}")
     except Exception as e:
-        await print(f"An error occured.\nPlease retry, or contact an administrator if the issue persists.")      
+        logger.error(f"An exception occured: {e}")      
     else:
        return response
 
@@ -80,11 +88,11 @@ async def get_quota():
         response = requests.get(settings.URLS['api_allowance'], headers=settings.HEADERS).json()     
     except requests.exceptions.HTTPError as e:
         message = json.loads(e.response.text).get('error', 'No error message found')
-        await print(f"HTTP error: {e.response.status_code}\n{message}")
+        logger.error(f"HTTP error: {e.response.status_code}\n{message}")
     except requests.exceptions.RequestException as e:
-        await print(f"Network error: {e.response.status_code}\n{e.response.text}")
+        logger.error(f"Network error: {e.response.status_code}\n{e.response.text}")
     except Exception as e:  
-        await print(f"An error occured.\nPlease retry, or contact an administrator if the issue persists.")
+        logger.error(f"An exception occured: {e}")
     else:
         return response
 
@@ -93,11 +101,11 @@ async def get_search(search_query):
         response = requests.get(settings.URLS['areas_search'].format(text=search_query), headers=settings.HEADERS).json()
     except requests.exceptions.HTTPError as e:
         message = json.loads(e.response.text).get('error', 'No error message found')
-        await print(f"HTTP error: {e.response.status_code}\n{message}")
+        logger.error(f"HTTP error: {e.response.status_code}\n{message}")
     except requests.exceptions.RequestException as e:
-        await print(f"Network error: {e.response.status_code}\n{e.response.text}")
+        logger.error(f"Network error: {e.response.status_code}\n{e.response.text}")
     except Exception as e:
-        await print(f"An error occured.\nPlease retry, or contact an administrator if the issue persists.")
+        logger.error(f"An exception occured: {e}")
     else:
         return response
 
@@ -229,4 +237,4 @@ async def search(ctx, error):
         await ctx.send("Input is invalid or empty. Please retry by entering a search query.")
 
 if (__name__ == "__main__"):
-    bot.run(settings.DISCORD_API_SECRET)
+    bot.run(settings.DISCORD_API_SECRET, root_logger=True)
