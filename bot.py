@@ -15,6 +15,7 @@ emoji_high_voltage = '\U000026A1';
 areas_info = {}
 current_subscriptions = {}
 last_search_results = {}
+viewed_subscriptions = {}
 
 # METHODS #
 
@@ -29,7 +30,7 @@ async def check_loadshedding(stage):
         area_id = current_subscriptions[sub]['area']['id']
         if 'error' in areas_info[area_id]:
             logger.error(f"Error fetching schedules for: {areas_info[area_id]}")
-            await channel.send(f"The latest schedules could not be fetched due to reaching your quota limit.\nYou can check your current quota usage using the '!quota' command.")
+            await channel.send(f"The latest schedules could not be fetched due to reaching your quota limit.\nYou can check your current quota usage using the '/quota' command.")
             return
         days = areas_info[area_id]['schedule']['days']
         for day in days:
@@ -150,6 +151,9 @@ async def on_update_current_subscriptions(updated_subscriptions):
 
 @bot.tree.command(description="Add a new subscription", name="add")
 async def add(interaction: discord.Interaction, area_number: str):
+    if not last_search_results:
+        await interaction.response.send_message("No search results available.\nPlease use the '/search' command first.")
+        return
     selected_area = int(area_number)
     user = {'id': interaction.user.id, 'name': interaction.user.name, 'mention': interaction.user.mention}
     area = last_search_results[selected_area]
@@ -176,6 +180,18 @@ async def quota(interaction: discord.Interaction):
 
     await interaction.response.send_message(f"Today's quota usage is: {allowance['count']} / {allowance['limit']}")
 
+@bot.tree.command(description="Remove a current subscription", name="remove")
+async def remove(interaction: discord.Interaction, sub_number: str):
+    if not viewed_subscriptions:
+        await interaction.response.send_message("Please use the '/view' command to check which subscriptions can be removed.")
+        return
+    selected_subscription = int(sub_number)
+    if selected_subscription in viewed_subscriptions:
+        subscription = viewed_subscriptions[selected_subscription][1]
+        await remove_subscription(subscription)
+        viewed_subscriptions.pop(selected_subscription, None)
+        await interaction.response.send_message(f"{subscription['user']['mention']}\nRemoved subscription for: {subscription['area']['name']}")
+
 @bot.tree.command(description="Search areas by keywords", name="search")
 async def search(interaction: discord.Interaction, search_text: str):
     global last_search_results
@@ -201,23 +217,14 @@ async def search_results(interaction: discord.Interaction):
 
 @bot.tree.command(description="View all current subscriptions", name="view")
 async def view(interaction: discord.Interaction):
+    global viewed_subscriptions
     if not current_subscriptions:
         await interaction.response.send_message("No subscriptions available.")
     else:
-        indexed_subscriptions = {index + 1: (sub_id, sub) for index, (sub_id, sub) in enumerate(current_subscriptions.items())}
-        output = '\n'.join([f"{index}. {sub['user']['name']} - {sub['area']['name']}\n\t{sub['area']['id']}" for index, (sub_id, sub) in indexed_subscriptions.items()])
+        viewed_subscriptions = {index + 1: (sub_id, sub) for index, (sub_id, sub) in enumerate(current_subscriptions.items())}
+        output = '\n'.join([f"{index}. {sub['user']['name']} - {sub['area']['name']}\n\t{sub['area']['id']}" for index, (sub_id, sub) in viewed_subscriptions.items()])
         await interaction.response.send_message(f"Current subscriptions:\n{output}")
-        await interaction.followup.send("To remove a subscription, type 'remove' followed by the subscription number.\nFor example, 'remove 1'")
-
-        def check_remove(m):
-            return (m.content.startswith("remove") and int(m.content.split(' ')[1]) in indexed_subscriptions)
-
-        msg = await bot.wait_for("message", check=check_remove) 
-        selected_subscription = int(msg.content.split(' ')[1])
-        if selected_subscription in indexed_subscriptions:
-            subscription = indexed_subscriptions[selected_subscription][1]
-            await remove_subscription(subscription)
-            await interaction.followup.send(f"{subscription['user']['mention']}\nRemoved subscription for: {subscription['area']['name']}")
+        await interaction.followup.send("To remove a subscription, use the '/remove' command and provide the subscription number.\nFor example, '/remove 1'")
 
 # ERRORS #
 
@@ -230,6 +237,11 @@ async def add(ctx, error):
 async def area(ctx, error):
     if isinstance(error, commands.MissingRequiredArgument):
         await ctx.send("Input is invalid or empty. Please retry by entering an area ID.")
+
+@remove.error
+async def remove(ctx, error):
+    if isinstance(error, commands.MissingRequiredArgument):
+        await ctx.send("Input is invalid or empty. Please retry by entering an area number.")
 
 @search.error
 async def search(ctx, error):
