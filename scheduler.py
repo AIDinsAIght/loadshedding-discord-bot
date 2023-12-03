@@ -3,6 +3,7 @@ from discord.ext import commands, tasks
 import json
 import requests
 from datetime import datetime, time
+from error_handling import handle_api_errors, check_status_code
 
 logger = settings.logging.getLogger("bot")
 
@@ -48,20 +49,12 @@ class Scheduler(commands.Cog):
             self.areas_info[area_id] = await self.get_area_info(area_id)
         return self.areas_info
     
+    @handle_api_errors
     async def get_area_info(self, area_id):
-            logger.info("Execute get_area_info")
-            try:
-                response = requests.get(settings.URLS['area'].format(area=area_id), headers=settings.HEADERS)
-                data = response.json()
-            except requests.exceptions.HTTPError as e:
-                message = json.loads(e.response.text).get('error', 'No error message found')
-                logger.error(f"HTTP error: {e.response.status_code}\n{message}")
-            except requests.exceptions.RequestException as e:
-                logger.error(f"Network error: {e.response.status_code}\n{e.response.text}")
-            except Exception as e:
-                logger.error(f"An exception occured: {e}")
-            else:
-                return data;
+        logger.info("Execute get_area_info")
+        response = requests.get(settings.URLS['area'].format(area=area_id), headers=settings.HEADERS)
+        check_status_code(response)
+        return response.json()
 
     async def get_eskom_status(self):
         logger.info("Execute get_eskom_status")

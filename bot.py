@@ -2,9 +2,9 @@ import settings
 from discord.ext import commands
 import discord
 import requests
-import json
 import pickle
 from datetime import datetime
+from error_handling import handle_api_errors, check_status_code
 
 logger = settings.logging.getLogger("bot")
 
@@ -28,9 +28,9 @@ async def check_loadshedding(stage):
     today = now.strftime('%A')
     for sub in current_subscriptions:
         area_id = current_subscriptions[sub]['area']['id']
-        if 'error' in areas_info[area_id]:
-            logger.error(f"Error fetching schedules for: {areas_info[area_id]}")
-            await channel.send(f"The latest schedules could not be fetched due to reaching your quota limit.\nYou can check your current quota usage using the '/quota' command.")
+        if areas_info.get(area_id) is None or 'error' in areas_info[area_id]:
+            logger.error(f"Error fetching schedules")
+            await channel.send(f"The latest schedules could not be retrieved.\nYou can check your current quota usage using the '/quota' command.")
             return
         days = areas_info[area_id]['schedule']['days']
         for day in days:
@@ -69,46 +69,24 @@ def save_subscriptions():
 async def send_alert(sub):
     await channel.send(f"{sub['user']['mention']}\nLoadshedding starting soon for area: {sub['area']['name']}")
 
+async def send_error_message():
+    await channel.send(f"The API experienced an error.\nPlease try again, or contact an admin if the issue persists.")
+
 # API CALLS #
+@handle_api_errors
+async def do_esp_get_request(url, **params):
+    response = requests.get(url.format(**params), headers=settings.HEADERS)
+    check_status_code(response)
+    return response.json()
 
 async def get_area(area_id):
-    try:
-        response = requests.get(settings.URLS['area'].format(area=area_id), headers=settings.HEADERS).json()
-    except requests.exceptions.HTTPError as e:
-        message = json.loads(e.response.text).get('error', 'No error message found')
-        logger.error(f"HTTP error: {e.response.status_code}\n{message}")
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Network error: {e.response.status_code}\n{e.response.text}")
-    except Exception as e:
-        logger.error(f"An exception occured: {e}")      
-    else:
-       return response
+    return await do_esp_get_request(settings.URLS['area'], area=area_id)
 
 async def get_quota():
-    try:
-        response = requests.get(settings.URLS['api_allowance'], headers=settings.HEADERS).json()     
-    except requests.exceptions.HTTPError as e:
-        message = json.loads(e.response.text).get('error', 'No error message found')
-        logger.error(f"HTTP error: {e.response.status_code}\n{message}")
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Network error: {e.response.status_code}\n{e.response.text}")
-    except Exception as e:  
-        logger.error(f"An exception occured: {e}")
-    else:
-        return response
+    return await do_esp_get_request(settings.URLS['api_allowance'])
 
 async def get_search(search_query):
-    try:
-        response = requests.get(settings.URLS['areas_search'].format(text=search_query), headers=settings.HEADERS).json()
-    except requests.exceptions.HTTPError as e:
-        message = json.loads(e.response.text).get('error', 'No error message found')
-        logger.error(f"HTTP error: {e.response.status_code}\n{message}")
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Network error: {e.response.status_code}\n{e.response.text}")
-    except Exception as e:
-        logger.error(f"An exception occured: {e}")
-    else:
-        return response
+    return await do_esp_get_request(settings.URLS['areas_search'], text=search_query)
 
 # EVENTS #
 
@@ -166,19 +144,21 @@ async def add(interaction: discord.Interaction, area_number: str):
 @bot.tree.command(description="Get area info using an area ID", name="area")
 async def area(interaction: discord.Interaction, area_id: str):
     data = await get_area(area_id)
-
-    info, events = data['info'], data['events']
-    next_event = events[0] if events else None
-
-    await interaction.response.send_message(f"Area: {info['name']}\nStatus: {next_event['note']}\nStart: {next_event['start']}")
+    if data:
+        info, events = data['info'], data['events']
+        next_event = events[0] if events else None
+        await interaction.response.send_message(f"Area: {info['name']}\nStatus: {next_event['note']}\nStart: {next_event['start']}")
+    else:
+        await send_error_message()
 
 @bot.tree.command(description="View daily API usage", name="quota")
 async def quota(interaction: discord.Interaction):
     data = await get_quota()
-
-    allowance = data['allowance']
-
-    await interaction.response.send_message(f"Today's quota usage is: {allowance['count']} / {allowance['limit']}")
+    if data:
+        allowance = data['allowance']
+        await interaction.response.send_message(f"Today's quota usage is: {allowance['count']} / {allowance['limit']}")
+    else:
+        await send_error_message()
 
 @bot.tree.command(description="Remove a current subscription", name="remove")
 async def remove(interaction: discord.Interaction, sub_number: str):
@@ -198,13 +178,14 @@ async def search(interaction: discord.Interaction, search_text: str):
 
     search_query = '+'.join(search_text.split(" "))
     data = await get_search(search_query)
-
-    areas = data['areas']
-    last_search_results = {index + 1: area for index, area in enumerate(areas)}
-    output = '\n'.join([f"{index}. {area['name']} - {area['region']}" for index, area in last_search_results.items()])
-
-    await interaction.response.send_message(f"Areas found:\n{output}")
-    await interaction.followup.send("To subscribe to alerts for an area, use the '/add' command and provide the area number.\nFor example, '/add 1'")
+    if data:
+        areas = data['areas']
+        last_search_results = {index + 1: area for index, area in enumerate(areas)}
+        output = '\n'.join([f"{index}. {area['name']} - {area['region']}" for index, area in last_search_results.items()])
+        await interaction.response.send_message(f"Areas found:\n{output}")
+        await interaction.followup.send("To subscribe to alerts for an area, use the '/add' command and provide the area number.\nFor example, '/add 1'")
+    else:
+        await send_error_message()
 
 @bot.tree.command(description="View the results of the last search", name="search_results")
 async def search_results(interaction: discord.Interaction):
