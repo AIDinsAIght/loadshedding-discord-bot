@@ -8,7 +8,7 @@ from error_handling import handle_api_errors, check_status_code
 logger = settings.logging.getLogger("bot")
 
 scheduled_time = time(tzinfo=settings.TIMEZONE)
-minute_buffer = 30
+minute_buffer = settings.MINUTE_BUFFER
 
 class Scheduler(commands.Cog):
 
@@ -64,7 +64,7 @@ class Scheduler(commands.Cog):
         except Exception as e:
             logger.error(f"Error fetching eskom status: {e}")
         else:
-            return int(stage)-1
+            return int(stage)
     
     # LOOPS #
 

@@ -18,6 +18,7 @@ HEADERS = {'token': ESP_API_SECRET}
 
 # SETTINGS #
 FILE_PATH = 'subscriptions.pkl'
+MINUTE_BUFFER = 30
 TIMEZONE = ZoneInfo('Africa/Johannesburg')
 
 # REQUEST URLS #
